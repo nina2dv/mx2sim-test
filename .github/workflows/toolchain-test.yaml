@@ -121,27 +121,7 @@ jobs:
           cd -
 
           # Step 3: dtg2sim run python tests: simulate(), train(), test(), debug()
-          dtg2sim/venv/bin/python -c "
-import sys
-sys.path.insert(0, 'dtg2sim')
-import main
-
-print('Running simulate()...')
-main.c.simulate()
-
-print('Running train()...')
-main.c.train()
-
-print('Running test()...')
-main.c.test()
-
-print('Running debug()...')
-main.g.reset()
-# example debug steps, adjust as needed
-main.g.step(main.c, [])
-
-print('Completed dtg2sim tests for', '${basefile}')
-"
+          dtg2sim/venv/bin/python -c 'import sys; sys.path.insert(0, "dtg2sim"); import main; main.c.simulate(); main.c.train(); main.c.test(); main.g.reset(); main.g.step(main.c, []); print("Done")'
 
           echo "Completed processing $file"
         done
