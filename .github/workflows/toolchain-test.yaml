@@ -122,9 +122,9 @@ jobs:
 
           # Step 3: dtg2sim run python tests: simulate(), train(), test(), debug()
           cd dtg2sim
-          dtg2sim/venv/bin/python -c 'import sys; sys.path.insert(0, "."); import main; main.c.simulate(); main.c.train(); main.c.test(); main.g.reset(); main.g.step(main.c, []); print("Done")'
+          ./venv/bin/python -c 'import sys; sys.path.insert(0, "."); import main; main.c.simulate(); main.c.train(); main.c.test(); main.g.reset(); main.g.step(main.c, []); print("Done")'
           cd -
-          
+
           echo "Completed processing $file"
         done
 
