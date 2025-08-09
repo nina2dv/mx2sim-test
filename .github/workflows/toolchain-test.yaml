@@ -1,0 +1,131 @@
+name: Run Toolchain
+
+on:
+  push:
+    paths:
+      - 'input-diagrams/**'
+  workflow_dispatch:
+
+jobs:
+  test-toolchain:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repo
+      uses: actions/checkout@v3
+
+    - name: Setup Java 21 (for mx2dtx)
+      uses: actions/setup-java@v3
+      with:
+        distribution: 'temurin'
+        java-version: 21
+
+    - name: Setup Maven
+      run: sudo apt-get install -y maven
+
+    - name: Setup Python 3.13
+      uses: actions/setup-python@v4
+      with:
+        python-version: 3.13
+
+    - name: Install SWI-Prolog (required by dtg2sim)
+      run: sudo apt-get install -y swi-prolog
+
+    - name: Create Maven settings.xml with secrets
+      env:
+        GITHUB_USERNAME: ${{ secrets.GH_USERNAME }}
+        GITHUB_PAT: ${{ secrets.GH_PAT }}
+      run: |
+        cat <<EOF > settings.xml
+        <settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
+                  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                  xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0
+                                      http://maven.apache.org/xsd/settings-1.0.0.xsd">
+          <activeProfiles>
+              <activeProfile>github</activeProfile>
+          </activeProfiles>
+
+          <profiles>
+              <profile>
+                  <id>github</id>
+                  <repositories>
+                      <repository>
+                          <id>github</id>
+                          <name>Github Packages</name>
+                          <url>https://maven.pkg.github.com/nina2dv/xml-validation</url>
+                          <snapshots>
+                              <enabled>true</enabled>
+                              <updatePolicy>always</updatePolicy>
+                          </snapshots>
+                          <releases>
+                              <enabled>true</enabled>
+                          </releases>
+                      </repository>
+                  </repositories>
+              </profile>
+          </profiles>
+
+          <servers>
+              <server>
+                  <id>github</id>
+                  <username>$GITHUB_USERNAME</username>
+                  <password>$GITHUB_PAT</password>
+              </server>
+          </servers>
+        </settings>
+        EOF
+
+    - name: Build mx2dtx once
+      run: |
+        cd mx2dtx
+        mvn compile
+
+    - name: Build and install dtx2X with settings.xml
+      run: |
+        cd dtx2X
+        mvn clean install -s ../settings.xml -DskipTests
+
+    - name: Clone dtg2sim and setup Python environment
+      run: |
+        git clone https://github.com/cmg-yorku/dtg2sim.git
+        cd dtg2sim
+        python -m venv venv
+        source venv/bin/activate
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Process all XML files through toolchain
+      shell: bash
+      run: |
+        set -e
+        source dtg2sim/venv/bin/activate
+
+        for file in input-diagrams/*.xml; do
+          echo "Processing $file"
+          basefile=$(basename "$file" .xml)
+
+          # Step 1: mx2dtx via Maven exec plugin
+          cd mx2dtx
+          mvn exec:java -Dexec.args="-f ../../$file -o ../../${basefile}-dtx.xml"
+          cd -
+
+          # Step 2: dtx2X via Maven exec plugin with settings.xml
+          cd dtx2X
+          mvn exec:java -s ../settings.xml -Dexec.args="-f ../${basefile}-dtx.xml -o ../${basefile}-dtg.pl"
+          cd -
+
+          # Step 3: dtg2sim run python test, outputs (if any) saved inside dtg2sim repo or elsewhere
+          python -i dtg2sim/main.py ./${basefile}-dtg.pl << EOF
+c.test()
+EOF
+
+          echo "Completed processing $file"
+        done
+
+    - name: Upload all output files as artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: toolchain-outputs
+        path: |
+          *.xml
+          *.pl
