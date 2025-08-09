@@ -100,6 +100,11 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
 
+    - name: Download DT-Golog.pl into dtg2sim folder
+      run: |
+        mkdir -p dtg2sim/scripts/QE
+        curl -L -o dtg2sim/scripts/QE/DT-Golog.pl https://raw.githubusercontent.com/nina2dv/mx2sim-test/main/DT-Golog.pl
+
     - name: Process all XML files through toolchain
       shell: bash
       run: |
