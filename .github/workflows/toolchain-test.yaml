@@ -112,7 +112,7 @@ jobs:
 
           # Step 1: mx2dtx via Maven exec plugin
           cd mx2dtx
-          mvn exec:java -Dexec.args="-f ../input-diagrams/$basefile.xml -o ../${basefile}-dtx.xml"
+          mvn exec:java -Dexec.args="-f ../input-diagrams/${basefile}.xml -o ../${basefile}-dtx.xml"
           cd -
 
           # Step 2: dtx2X via Maven exec plugin with settings.xml
@@ -120,9 +120,28 @@ jobs:
           mvn exec:java -s ../settings.xml -Dexec.args="-f ../${basefile}-dtx.xml -o ../${basefile}-dtg.pl"
           cd -
 
-          # Step 3: dtg2sim run python test, outputs (if any) saved inside dtg2sim repo or elsewhere
-          dtg2sim/venv/bin/python -c "import sys; sys.path.insert(0, 'dtg2sim'); import main; main.c.test()"
+          # Step 3: dtg2sim run python tests: simulate(), train(), test(), debug()
+          dtg2sim/venv/bin/python -c "
+import sys
+sys.path.insert(0, 'dtg2sim')
+import main
 
+print('Running simulate()...')
+main.c.simulate()
+
+print('Running train()...')
+main.c.train()
+
+print('Running test()...')
+main.c.test()
+
+print('Running debug()...')
+main.g.reset()
+# example debug steps, adjust as needed
+main.g.step(main.c, [])
+
+print('Completed dtg2sim tests for', '${basefile}')
+"
 
           echo "Completed processing $file"
         done
@@ -132,5 +151,5 @@ jobs:
       with:
         name: toolchain-outputs
         path: |
-          *.xml
-          *.pl
+          '*-dtx.xml'
+          '*-dtg.pl'
