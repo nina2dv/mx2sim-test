@@ -105,30 +105,9 @@ jobs:
         mkdir -p dtg2sim/scripts/QE
         curl -L -o dtg2sim/scripts/QE/DT-Golog.pl https://raw.githubusercontent.com/nina2dv/mx2sim-test/main/DT-Golog.pl
 
-    - name: Process all XML files through toolchain
-      shell: bash
+    - name: Create the Python runner script
       run: |
-        set -e
-        source dtg2sim/venv/bin/activate
-
-        for file in input-diagrams/*.xml; do
-          echo "Processing $file"
-          basefile=$(basename "$file" .xml)
-
-          # Step 1: mx2dtx via Maven exec plugin
-          cd mx2dtx
-          mvn exec:java -Dexec.args="-f ../input-diagrams/${basefile}.xml -o ../${basefile}-dtx.xml"
-          cd -
-
-          # Step 2: dtx2X via Maven exec plugin with settings.xml
-          cd dtx2X
-          mvn exec:java -s ../settings.xml -Dexec.args="-f ../${basefile}-dtx.xml -o ../${basefile}-dtg.pl"
-          cd -
-
-          # Step 3: dtg2sim run python tests: simulate(), train(), test(), debug()
-          cd dtg2sim
-
-          cat > run_dtg2sim_tests.py <<EOF
+        cat > ./dtg2sim/run_dtg2sim_tests.py <<EOF
 import sys
 sys.path.insert(0, 'dtg2sim')
 import main
@@ -164,6 +143,29 @@ except Exception as e:
 
 print("Completed all dtg2sim tests")
 EOF
+
+    - name: Process all XML files through toolchain
+      shell: bash
+      run: |
+        set -e
+        source dtg2sim/venv/bin/activate
+
+        for file in input-diagrams/*.xml; do
+          echo "Processing $file"
+          basefile=$(basename "$file" .xml)
+
+          # Step 1: mx2dtx via Maven exec plugin
+          cd mx2dtx
+          mvn exec:java -Dexec.args="-f ../input-diagrams/${basefile}.xml -o ../${basefile}-dtx.xml"
+          cd -
+
+          # Step 2: dtx2X via Maven exec plugin with settings.xml
+          cd dtx2X
+          mvn exec:java -s ../settings.xml -Dexec.args="-f ../${basefile}-dtx.xml -o ../${basefile}-dtg.pl"
+          cd -
+
+          # Step 3: dtg2sim run python tests: simulate(), train(), test(), debug()
+          cd dtg2sim
           ./venv/bin/python -u run_dtg2sim_tests.py
           cd -
 
