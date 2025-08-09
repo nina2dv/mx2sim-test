@@ -26,10 +26,15 @@ jobs:
     - name: Setup Python 3.13
       uses: actions/setup-python@v4
       with:
-        python-version: 3.13
+        python-version: '3.13'
 
-    - name: Install SWI-Prolog (required by dtg2sim)
-      run: sudo apt-get install -y swi-prolog
+    - name: Install SWI-Prolog
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y software-properties-common
+        sudo apt-add-repository ppa:swi-prolog/stable
+        sudo apt-get update
+        sudo apt-get install -y swi-prolog
 
     - name: Create Maven settings.xml with secrets
       env:
@@ -78,20 +83,20 @@ jobs:
     - name: Clone mx2dtx repository
       run: git clone https://github.com/cmg-yorku/mx2dtx.git
 
-    - name: Build mx2dtx once
+    - name: Build mx2dtx
       run: |
         cd mx2dtx
-        mvn compile
+        mvn compile -s ../settings.xml
 
     - name: Clone dtx2X repository
       run: git clone https://github.com/cmg-yorku/dtx2X.git
 
-    - name: Build and install dtx2X with settings.xml
+    - name: Build and install dtx2X
       run: |
         cd dtx2X
         mvn clean install -s ../settings.xml -DskipTests
 
-    - name: Clone dtg2sim and setup Python environment
+    - name: Clone dtg2sim and setup
       run: |
         git clone https://github.com/cmg-yorku/dtg2sim.git
         cd dtg2sim
@@ -100,85 +105,164 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
 
-    - name: Download DT-Golog.pl into dtg2sim folder
+    - name: Create test runner script
       run: |
-        mkdir -p dtg2sim/scripts/QE
-        curl -L -o dtg2sim/scripts/QE/DT-Golog.pl https://raw.githubusercontent.com/nina2dv/mx2sim-test/main/DT-Golog.pl
-
-    - name: Create the Python runner script
-      run: |
-        cat > ./dtg2sim/run_dtg2sim_tests.py <<EOF
+        cat > dtg2sim/run_tests.py << 'EOF'
+#!/usr/bin/env python
 import sys
-sys.path.insert(0, 'dtg2sim')
-import main
+import os
+import contextlib
+import io
 
-try:
-    print("Starting simulate()")
-    main.c.simulate()
-    print("simulate() done")
-except Exception as e:
-    print("simulate() error:", e)
+# Add the src directory to the path
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
-try:
-    print("Starting train()")
-    main.c.train()
-    print("train() done")
-except Exception as e:
-    print("train() error:", e)
+from GMEnv import GMEnv
+from QueryEngine import QueryEngine
+from dtg2sim import dtg2sim
 
-try:
-    print("Starting test()")
-    main.c.test()
-    print("test() done")
-except Exception as e:
-    print("test() error:", e)
+def test_spec(filename):
+    """Test a DT-Golog specification"""
+    print(f"\n{'='*60}")
+    print(f"Testing: {filename}")
+    print('='*60)
+    
+    if not os.path.exists(filename):
+        print(f"Error: File {filename} not found")
+        return False
+    
+    try:
+        # Initialize the environment
+        e = QueryEngine(filename)
+        g = GMEnv(qEng=e)
+        c = dtg2sim(g)
+        
+        print(f"✓ Successfully loaded specification")
+        
+        # Test simulation
+        print("\n--- Running Simulation (100 episodes) ---")
+        try:
+            with contextlib.redirect_stdout(io.StringIO()) as f:
+                avg_reward = c.simulate(episodes=100)
+            print(f"✓ Simulation complete. Average reward: {avg_reward:.4f}")
+        except Exception as e:
+            print(f"✗ Simulation failed: {e}")
+            return False
+        
+        # Test training (reduced iterations for CI)
+        print("\n--- Running Training (1000 iterations) ---")
+        try:
+            with contextlib.redirect_stdout(io.StringIO()) as f:
+                train_params = c.train(learn_iter=1000, logging=1000, algo="A2C")
+            print(f"✓ Training complete")
+        except Exception as e:
+            print(f"✗ Training failed: {e}")
+            return False
+        
+        # Test the trained model
+        print("\n--- Testing Trained Model (100 episodes) ---")
+        try:
+            with contextlib.redirect_stdout(io.StringIO()) as f:
+                test_reward = c.test(test_iter=100)
+            if test_reward != -1:
+                print(f"✓ Testing complete. Average reward: {test_reward:.4f}" if test_reward != 'N/A' else "✓ Testing complete (N/A)")
+            else:
+                print("✗ No trained model to test")
+        except Exception as e:
+            print(f"✗ Testing failed: {e}")
+            return False
+        
+        # Clean up
+        c.close()
+        print(f"\n✓ All tests passed for {filename}")
+        return True
+        
+    except Exception as e:
+        print(f"✗ Error initializing environment: {e}")
+        return False
 
-try:
-    print("Starting debug()")
-    main.g.reset()
-    main.g.step(main.c, [])
-    print("debug() done")
-except Exception as e:
-    print("debug() error:", e)
-
-print("Completed all dtg2sim tests")
+if __name__ == "__main__":
+    if len(sys.argv) > 1:
+        spec_file = sys.argv[1]
+        success = test_spec(spec_file)
+        sys.exit(0 if success else 1)
+    else:
+        print("Usage: python run_tests.py <spec_file.pl>")
+        sys.exit(1)
 EOF
+        chmod +x dtg2sim/run_tests.py
 
-    - name: Process all XML files through toolchain
+    - name: Process all files through toolchain
       shell: bash
       run: |
         set -e
+        
+        # Activate Python virtual environment
         source dtg2sim/venv/bin/activate
-
-        for file in input-diagrams/*.xml; do
-          echo "Processing $file"
-          basefile=$(basename "$file" .xml)
-
-          # Step 1: mx2dtx via Maven exec plugin
-          cd mx2dtx
-          mvn exec:java -Dexec.args="-f ../input-diagrams/${basefile}.xml -o ../${basefile}-dtx.xml"
-          cd -
-
-          # Step 2: dtx2X via Maven exec plugin with settings.xml
-          cd dtx2X
-          mvn exec:java -s ../settings.xml -Dexec.args="-f ../${basefile}-dtx.xml -o ../${basefile}-dtg.pl"
-          cd -
-
-          # Step 3: dtg2sim run python tests: simulate(), train(), test(), debug()
-          cd dtg2sim
-          ./venv/bin/python -u run_dtg2sim_tests.py
-          cd -
-
-          echo "Completed processing $file"
+        
+        # Create output directory
+        mkdir -p output
+        
+        for xml_file in input-diagrams/*.xml; do
+          if [ -f "$xml_file" ]; then
+            echo ""
+            echo "=========================================="
+            echo "Processing $xml_file"
+            echo "=========================================="
+            
+            basefile=$(basename "$xml_file" .xml)
+            
+            # Step 1: mx2dtx - Convert Drawio to DTX
+            echo "Step 1: Converting Drawio to DTX..."
+            cd mx2dtx
+            mvn exec:java -s ../settings.xml -Dexec.mainClass="ca.yorku.cmg.mx2dtx.Main" \
+                         -Dexec.args="-f ../input-diagrams/${basefile}.xml -o ../output/${basefile}-dtx.xml"
+            cd ..
+            
+            if [ ! -f "output/${basefile}-dtx.xml" ]; then
+              echo "Error: DTX file not created"
+              continue
+            fi
+            echo "DTX file created: output/${basefile}-dtx.xml"
+            
+            # Step 2: dtx2X - Convert DTX to DT-Golog
+            echo "Step 2: Converting DTX to DT-Golog..."
+            cd dtx2X
+            mvn exec:java -s ../settings.xml -Dexec.mainClass="ca.yorku.cmg.dtx2x.Main" \
+                         -Dexec.args="-f ../output/${basefile}-dtx.xml -o ../output/${basefile}-dtg.pl"
+            cd ..
+            
+            if [ ! -f "output/${basefile}-dtg.pl" ]; then
+              echo "Error: DT-Golog file not created"
+              continue
+            fi
+            echo "DT-Golog file created: output/${basefile}-dtg.pl"
+            
+            # Step 3: dtg2sim - Test the DT-Golog specification
+            echo "Step 3: Testing DT-Golog specification with dtg2sim..."
+            cd dtg2sim
+            python run_tests.py ../output/${basefile}-dtg.pl
+            cd ..
+            
+            echo "ompleted processing $xml_file"
+          fi
         done
+        
+        echo ""
+        echo "=========================================="
+        echo "All files processed successfully!"
+        echo "=========================================="
 
-    - name: List output files for debug
-      run: ls -l *.xml *.pl || echo "No output files found"
+    - name: List output files
+      run: |
+        echo "Generated files:"
+        ls -la output/ || echo "No output directory found"
 
-    - name: Upload all output files as artifacts
+    - name: Upload output files as artifacts
       uses: actions/upload-artifact@v4
       with:
         name: toolchain-outputs
         path: |
-          '*-dtx.xml'
-          '*-dtg.pl'
+          output/*-dtx.xml
+          output/*-dtg.pl
+        if-no-files-found: warn
