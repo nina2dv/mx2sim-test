@@ -75,10 +75,16 @@ jobs:
         </settings>
         EOF
 
+    - name: Clone mx2dtx repository
+      run: git clone https://github.com/cmg-yorku/mx2dtx.git
+
     - name: Build mx2dtx once
       run: |
         cd mx2dtx
         mvn compile
+
+    - name: Clone dtx2X repository
+      run: git clone https://github.com/cmg-yorku/dtx2X.git
 
     - name: Build and install dtx2X with settings.xml
       run: |
