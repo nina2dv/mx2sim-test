@@ -107,89 +107,92 @@ jobs:
 
     - name: Create test runner script
       run: |
-        cat > dtg2sim/run_tests.py << 'EOF'
-#!/usr/bin/env python
-import sys
-import os
-import contextlib
-import io
-
-# Add the src directory to the path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
-
-from GMEnv import GMEnv
-from QueryEngine import QueryEngine
-from dtg2sim import dtg2sim
-
-def test_spec(filename):
-    """Test a DT-Golog specification"""
-    print(f"\n{'='*60}")
-    print(f"Testing: {filename}")
-    print('='*60)
-    
-    if not os.path.exists(filename):
-        print(f"Error: File {filename} not found")
-        return False
-    
-    try:
-        # Initialize the environment
-        e = QueryEngine(filename)
-        g = GMEnv(qEng=e)
-        c = dtg2sim(g)
+        cat > dtg2sim/run_tests.py << 'PYTHON_SCRIPT'
+        #!/usr/bin/env python
+        import sys
+        import os
+        import contextlib
+        import io
         
-        print(f"✓ Successfully loaded specification")
+        # Add the src directory to the path
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
         
-        # Test simulation
-        print("\n--- Running Simulation (100 episodes) ---")
-        try:
-            with contextlib.redirect_stdout(io.StringIO()) as f:
-                avg_reward = c.simulate(episodes=100)
-            print(f"✓ Simulation complete. Average reward: {avg_reward:.4f}")
-        except Exception as e:
-            print(f"✗ Simulation failed: {e}")
-            return False
+        from GMEnv import GMEnv
+        from QueryEngine import QueryEngine
+        from dtg2sim import dtg2sim
         
-        # Test training (reduced iterations for CI)
-        print("\n--- Running Training (1000 iterations) ---")
-        try:
-            with contextlib.redirect_stdout(io.StringIO()) as f:
-                train_params = c.train(learn_iter=1000, logging=1000, algo="A2C")
-            print(f"✓ Training complete")
-        except Exception as e:
-            print(f"✗ Training failed: {e}")
-            return False
+        def test_spec(filename):
+            """Test a DT-Golog specification"""
+            print(f"\n{'='*60}")
+            print(f"Testing: {filename}")
+            print('='*60)
+            
+            if not os.path.exists(filename):
+                print(f"Error: File {filename} not found")
+                return False
+            
+            try:
+                # Initialize the environment
+                e = QueryEngine(filename)
+                g = GMEnv(qEng=e)
+                c = dtg2sim(g)
+                
+                print(f"✓ Successfully loaded specification")
+                
+                # Test simulation
+                print("\n--- Running Simulation (100 episodes) ---")
+                try:
+                    with contextlib.redirect_stdout(io.StringIO()) as f:
+                        avg_reward = c.simulate(episodes=100)
+                    print(f"✓ Simulation complete. Average reward: {avg_reward:.4f}")
+                except Exception as ex:
+                    print(f"✗ Simulation failed: {ex}")
+                    return False
+                
+                # Test training (reduced iterations for CI)
+                print("\n--- Running Training (1000 iterations) ---")
+                try:
+                    with contextlib.redirect_stdout(io.StringIO()) as f:
+                        train_params = c.train(learn_iter=1000, logging=1000, algo="A2C")
+                    print(f"✓ Training complete")
+                except Exception as ex:
+                    print(f"✗ Training failed: {ex}")
+                    return False
+                
+                # Test the trained model
+                print("\n--- Testing Trained Model (100 episodes) ---")
+                try:
+                    with contextlib.redirect_stdout(io.StringIO()) as f:
+                        test_reward = c.test(test_iter=100)
+                    if test_reward != -1:
+                        if test_reward != 'N/A':
+                            print(f"✓ Testing complete. Average reward: {test_reward:.4f}")
+                        else:
+                            print(f"✓ Testing complete (N/A)")
+                    else:
+                        print("✗ No trained model to test")
+                except Exception as ex:
+                    print(f"✗ Testing failed: {ex}")
+                    return False
+                
+                # Clean up
+                c.close()
+                print(f"\n✓ All tests passed for {filename}")
+                return True
+                
+            except Exception as ex:
+                print(f"✗ Error initializing environment: {ex}")
+                return False
         
-        # Test the trained model
-        print("\n--- Testing Trained Model (100 episodes) ---")
-        try:
-            with contextlib.redirect_stdout(io.StringIO()) as f:
-                test_reward = c.test(test_iter=100)
-            if test_reward != -1:
-                print(f"✓ Testing complete. Average reward: {test_reward:.4f}" if test_reward != 'N/A' else "✓ Testing complete (N/A)")
+        if __name__ == "__main__":
+            if len(sys.argv) > 1:
+                spec_file = sys.argv[1]
+                success = test_spec(spec_file)
+                sys.exit(0 if success else 1)
             else:
-                print("✗ No trained model to test")
-        except Exception as e:
-            print(f"✗ Testing failed: {e}")
-            return False
-        
-        # Clean up
-        c.close()
-        print(f"\n✓ All tests passed for {filename}")
-        return True
-        
-    except Exception as e:
-        print(f"✗ Error initializing environment: {e}")
-        return False
-
-if __name__ == "__main__":
-    if len(sys.argv) > 1:
-        spec_file = sys.argv[1]
-        success = test_spec(spec_file)
-        sys.exit(0 if success else 1)
-    else:
-        print("Usage: python run_tests.py <spec_file.pl>")
-        sys.exit(1)
-EOF
+                print("Usage: python run_tests.py <spec_file.pl>")
+                sys.exit(1)
+        PYTHON_SCRIPT
         chmod +x dtg2sim/run_tests.py
 
     - name: Process all files through toolchain
