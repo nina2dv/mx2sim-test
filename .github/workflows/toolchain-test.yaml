@@ -112,7 +112,7 @@ jobs:
 
           # Step 1: mx2dtx via Maven exec plugin
           cd mx2dtx
-          mvn exec:java -Dexec.args="-f ../input-diagrams/$file -o ../${basefile}-dtx.xml"
+          mvn exec:java -Dexec.args="-f ../input-diagrams/$basefile.xml -o ../${basefile}-dtx.xml"
           cd -
 
           # Step 2: dtx2X via Maven exec plugin with settings.xml
