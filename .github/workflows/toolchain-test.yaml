@@ -140,10 +140,10 @@ jobs:
                 print(f"✓ Successfully loaded specification")
                 
                 # Test simulation
-                print("\n--- Running Simulation (100 episodes) ---")
+                print("\n--- Running Simulation (1000 episodes) ---")
                 try:
                     with contextlib.redirect_stdout(io.StringIO()) as f:
-                        avg_reward = c.simulate(episodes=100)
+                        avg_reward = c.simulate(episodes=1000)
                     print(f"✓ Simulation complete. Average reward: {avg_reward:.4f}")
                 except Exception as ex:
                     print(f"✗ Simulation failed: {ex}")
